@@ -7,12 +7,26 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>あなたの名前 | Home</title>
   <meta name="description" content="自己紹介とリンク集" />
+<link rel="icon" href="/favicon.ico"> <!-- ファビコン -->>
+
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 2rem; line-height: 1.7; }
     .container { max-width: 760px; margin: auto; }
     header h1 { font-size: 2rem; margin-bottom: .25rem; }
     nav a { margin-right: .75rem; }
     footer { margin-top: 3rem; font-size: .9rem; opacity:.7; }
+
+    <!--軽いCSS-->
+      :root { --w: 760px; }
+      @media (prefers-color-scheme: dark) {
+      body { background:#0b0b0b; color:#e8e8e8; }
+      a { color:#7ab7ff; }
+      }
+      body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height:1.8; margin: 2rem; }
+      .container { max-width: var(--w); margin:auto; }
+      img { max-width:100%; height:auto; }
+      a { color:#0b57d0; }
+      code, pre { background:#f4f4f4; padding:.2em .4em; border-radius:.4em; }
   </style>
 </head>
 <body>
