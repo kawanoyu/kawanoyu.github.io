@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Dodger — シンプル避けゲーム</title>
+  <title>Dolphin Dodger — シンプル避けゲーム</title>
   <style>
     :root { --bg:#0f1220; --fg:#e9ecf1; --acc:#6cf; --muted:#aab1c6; }
     *{box-sizing:border-box}
@@ -28,7 +28,7 @@
       <div class="muted">矢印キー / A・D / タップで移動</div>
       <button id="restart" class="btn" aria-label="Restart">リスタート</button>
     </div>
-    <canvas id="game" width="720" height="480" aria-label="Dodger game"></canvas>
+    <canvas id="game" width="720" height="480" aria-label="Dolphin Dodger game"></canvas>
     <div class="mobile-ctrls" aria-hidden="false">
       <button class="ctrl" id="leftBtn">◀︎ 左</button>
       <button class="ctrl" id="rightBtn">右 ▶︎</button>
@@ -63,10 +63,11 @@
       last: 0,
       t: 0,
       score: 0,
-      speed: 130, // 障害物の初速（px/s）
-      player: { x: canvas.width/2, y: canvas.height-50, w: 60, h: 14, vx: 0 },
+      speed: 130,
+      player: { x: canvas.width/2, y: canvas.height-60, w: 48, h: 24, vx: 0 },
       obstacles: [],
       inputs: { left:false, right:false },
+      _spawnTimer: 0
     };
 
     function reset(){
@@ -75,8 +76,9 @@
       state.t = 0; state.last = 0;
       state.score = 0; scoreEl.textContent = '0';
       state.speed = 130;
-      state.player = { x: canvas.width/2, y: canvas.height-50, w: 60, h: 14, vx: 0 };
+      state.player = { x: canvas.width/2, y: canvas.height-60, w: 48, h: 24, vx: 0 };
       state.obstacles = [];
+      state._spawnTimer = 0;
       toast.textContent = 'スペースで開始 / Pで一時停止';
       draw();
     }
@@ -98,10 +100,12 @@
     }
 
     function spawnObstacle(){
-      const w = 20 + Math.random()*60; // 幅
+      const tile = 28; // 波の1タイル幅
+      const tiles = Math.floor(1 + Math.random()*4); // 1〜4タイル
+      const w = tile * tiles;
       const x = Math.random()*(canvas.width - w);
       const speed = state.speed * (0.9 + Math.random()*0.2);
-      state.obstacles.push({ x, y: -20, w, h: 12, vy: speed });
+      state.obstacles.push({ x, y: -32, w, h: 28, vy: speed });
     }
 
     function handleInput(dt){
@@ -124,14 +128,13 @@
 
     function update(dt){
       state.t += dt;
-      // スコア: 時間と少しのボーナス
-      state.score += dt*10; // 秒あたり10点
+      // スコア
+      state.score += dt*10;
       scoreEl.textContent = Math.floor(state.score);
 
       // 難易度スケーリング
-      state.speed += dt*6; // 徐々に速く
-      const spawnRate = 0.8 - Math.min(0.6, state.t*0.015); // 出現間隔が短く
-      if(state._spawnTimer === undefined) state._spawnTimer = 0;
+      state.speed += dt*6;
+      const spawnRate = 0.8 - Math.min(0.6, state.t*0.015);
       state._spawnTimer -= dt;
       if(state._spawnTimer <= 0){
         spawnObstacle();
@@ -143,14 +146,12 @@
 
       // 障害物更新
       for(const o of state.obstacles){ o.y += o.vy*dt; }
-      // 画面外のものを削除
       state.obstacles = state.obstacles.filter(o => o.y < canvas.height + 40);
 
       // 当たり判定
       for(const o of state.obstacles){
         if(collide({x:state.player.x,y:state.player.y,w:state.player.w,h:state.player.h}, o)){
-          gameOver();
-          break;
+          gameOver(); break;
         }
       }
     }
@@ -158,7 +159,6 @@
     function draw(){
       // 背景
       ctx.clearRect(0,0,canvas.width,canvas.height);
-      // グリッドっぽい演出
       ctx.save();
       ctx.globalAlpha = 0.07;
       ctx.strokeStyle = '#9ad0ff';
@@ -171,18 +171,32 @@
       }
       ctx.restore();
 
-      // プレイヤー
+      // プレイヤー（🐬）
       const p = state.player;
-      ctx.fillStyle = '#6cf';
-      ctx.fillRect(p.x, p.y, p.w, p.h);
-      // 速度に応じた尾
-      ctx.fillStyle = 'rgba(108,204,255,0.35)';
-      ctx.fillRect(p.x, p.y-6, Math.max(6, Math.abs(p.vx*0.05)), 4);
+      const dolphinSize = 36;
+      ctx.font = `${dolphinSize}px system-ui, Apple Color Emoji, Segoe UI Emoji`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.save();
+      ctx.translate(p.x, p.y-8);
+      ctx.rotate(Math.max(-0.35, Math.min(0.35, p.vx*0.002)));
+      ctx.fillText('🐬', 0, 0);
+      ctx.restore();
 
-      // 障害物
-      ctx.fillStyle = '#ff6b6b';
+      // 速度に応じた尾（残像）
+      ctx.fillStyle = 'rgba(108,204,255,0.30)';
+      ctx.fillRect(p.x-6, p.y+2, Math.max(6, Math.abs(p.vx*0.05)), 4);
+
+      // 障害物（🌊 波）
+      ctx.font = `28px system-ui, Apple Color Emoji, Segoe UI Emoji`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
       for(const o of state.obstacles){
-        ctx.fillRect(o.x, o.y, o.w, o.h);
+        const tile = 28;
+        const n = Math.max(1, Math.round(o.w / tile));
+        for(let i=0;i<n;i++){
+          ctx.fillText('🌊', o.x + i*tile, o.y);
+        }
       }
 
       // スタート時のオーバーレイ
@@ -192,14 +206,13 @@
         ctx.fillStyle = '#e9ecf1';
         ctx.font = '700 42px system-ui, -apple-system, Segoe UI, Roboto';
         ctx.textAlign = 'center';
-        ctx.fillText('Dodger', canvas.width/2, canvas.height/2-20);
+        ctx.fillText('Dolphin Dodger', canvas.width/2, canvas.height/2-20);
         ctx.font = '16px system-ui, -apple-system, Segoe UI, Roboto';
         ctx.fillStyle = '#aab1c6';
-        ctx.fillText('スペースで開始・←/→ または A/D で移動・Pで一時停止', canvas.width/2, canvas.height/2+16);
-        ctx.fillText('モバイルは画面下のボタンでもOK', canvas.width/2, canvas.height/2+40);
+        ctx.fillText('🐬 を操作して 🌊 を避けよう', canvas.width/2, canvas.height/2+16);
+        ctx.fillText('スペースで開始・←/→ または A/D ・Pで一時停止（モバイルは下のボタン）', canvas.width/2, canvas.height/2+40);
       }
 
-      // ポーズ表示
       if(state.paused){
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
         ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -223,17 +236,18 @@
       state.running = false; state.paused = false;
       toast.textContent = 'ゲームオーバー! R かボタンで再スタート';
       draw();
-      // スコア保存
       saveBest(Math.floor(state.score));
     }
+
+    function startIfNotRunning(){ if(!state.running){ start(); } }
 
     // --- 入力系 ---
     window.addEventListener('keydown', (e)=>{
       if(e.code === 'Space'){ start(); e.preventDefault(); }
       if(e.key === 'p' || e.key === 'P'){ pauseToggle(); }
       if(e.key === 'r' || e.key === 'R'){ reset(); start(); }
-      if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') state.inputs.left = true;
-      if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') state.inputs.right = true;
+      if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A'){ state.inputs.left = true; startIfNotRunning(); }
+      if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D'){ state.inputs.right = true; startIfNotRunning(); }
     });
     window.addEventListener('keyup', (e)=>{
       if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') state.inputs.left = false;
@@ -241,9 +255,9 @@
     });
 
     // モバイルボタン
-    leftBtn.addEventListener('touchstart', ()=> state.inputs.left = true);
+    leftBtn.addEventListener('touchstart', ()=> { state.inputs.left = true; startIfNotRunning(); });
     leftBtn.addEventListener('touchend', ()=> state.inputs.left = false);
-    rightBtn.addEventListener('touchstart', ()=> state.inputs.right = true);
+    rightBtn.addEventListener('touchstart', ()=> { state.inputs.right = true; startIfNotRunning(); });
     rightBtn.addEventListener('touchend', ()=> state.inputs.right = false);
 
     // リスタート
@@ -265,8 +279,15 @@
       }catch(err){ /* ignore */ }
     }
 
-    reset();
-    showBest();
+    function updateAndDrawOnce(){ update(0); draw(); }
+
+    // 初期化
+    function init(){
+      reset();
+      showBest();
+      draw();
+    }
+    init();
   })();
   </script>
 </body>
