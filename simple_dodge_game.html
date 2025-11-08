@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dodger — シンプル避けゲーム</title>
+  <style>
+    :root { --bg:#0f1220; --fg:#e9ecf1; --acc:#6cf; --muted:#aab1c6; }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#0b0f1d,#131937);color:var(--fg);font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", Helvetica, Arial, sans-serif;}
+    .wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;padding:16px}
+    canvas{background: radial-gradient(1200px 600px at 50% 0%, rgba(108,204,255,0.12), transparent 60%), #0b0f1d; border:1px solid rgba(255,255,255,0.08); border-radius:16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35);} 
+    .hud{display:flex;gap:16px;align-items:center;justify-content:space-between;width:min(720px,95vw)}
+    .score{font-weight:700}
+    .btn{appearance:none;border:0;border-radius:999px;padding:10px 16px;background:rgba(255,255,255,0.08);color:var(--fg);cursor:pointer;font-weight:700;backdrop-filter: blur(4px);} 
+    .btn:hover{background:rgba(255,255,255,0.12)}
+    .muted{color:var(--muted)}
+    .mobile-ctrls{display:none;gap:8px}
+    .ctrl{flex:1;min-width:100px;padding:14px 0;border-radius:12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);font-weight:700}
+    @media (max-width: 700px){ .mobile-ctrls{display:flex} }
+    .toast{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);padding:8px 12px;border-radius:12px;color:var(--muted);font-size:14px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hud">
+      <div class="score">Score: <span id="score">0</span></div>
+      <div class="muted">矢印キー / A・D / タップで移動</div>
+      <button id="restart" class="btn" aria-label="Restart">リスタート</button>
+    </div>
+    <canvas id="game" width="720" height="480" aria-label="Dodger game"></canvas>
+    <div class="mobile-ctrls" aria-hidden="false">
+      <button class="ctrl" id="leftBtn">◀︎ 左</button>
+      <button class="ctrl" id="rightBtn">右 ▶︎</button>
+    </div>
+  </div>
+  <div class="toast" id="toast">スペースで開始 / Pで一時停止</div>
+
+  <script>
+  (()=>{
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const restartBtn = document.getElementById('restart');
+    const toast = document.getElementById('toast');
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+
+    // --- サイズをデバイスに合わせて調整（レターボックス） ---
+    function fitCanvas(){
+      const maxW = Math.min(720, window.innerWidth*0.95);
+      const scale = maxW / canvas.width;
+      canvas.style.width = `${canvas.width*scale}px`;
+      canvas.style.height = `${canvas.height*scale}px`;
+    }
+    window.addEventListener('resize', fitCanvas);
+    fitCanvas();
+
+    // --- ゲームオブジェクト ---
+    const state = {
+      running: false,
+      paused: false,
+      last: 0,
+      t: 0,
+      score: 0,
+      speed: 130, // 障害物の初速（px/s）
+      player: { x: canvas.width/2, y: canvas.height-50, w: 60, h: 14, vx: 0 },
+      obstacles: [],
+      inputs: { left:false, right:false },
+    };
+
+    function reset(){
+      state.running = false;
+      state.paused = false;
+      state.t = 0; state.last = 0;
+      state.score = 0; scoreEl.textContent = '0';
+      state.speed = 130;
+      state.player = { x: canvas.width/2, y: canvas.height-50, w: 60, h: 14, vx: 0 };
+      state.obstacles = [];
+      toast.textContent = 'スペースで開始 / Pで一時停止';
+      draw();
+    }
+
+    function start(){
+      if(state.running) return;
+      state.running = true; state.paused = false; toast.textContent = 'Good luck!';
+      requestAnimationFrame(loop);
+      setTimeout(()=> toast.textContent = 'スコアは生存時間に応じて増加', 800);
+      setTimeout(()=> toast.textContent = '難易度は徐々に上がります', 2000);
+      setTimeout(()=> toast.textContent = '', 4200);
+    }
+
+    function pauseToggle(){
+      if(!state.running) return;
+      state.paused = !state.paused;
+      toast.textContent = state.paused ? '一時停止 (Pで再開)' : '';
+      if(!state.paused) requestAnimationFrame(loop);
+    }
+
+    function spawnObstacle(){
+      const w = 20 + Math.random()*60; // 幅
+      const x = Math.random()*(canvas.width - w);
+      const speed = state.speed * (0.9 + Math.random()*0.2);
+      state.obstacles.push({ x, y: -20, w, h: 12, vy: speed });
+    }
+
+    function handleInput(dt){
+      const accel = 900; // px/s^2
+      const maxV = 420; // px/s
+      if(state.inputs.left && !state.inputs.right) state.player.vx -= accel*dt;
+      else if(state.inputs.right && !state.inputs.left) state.player.vx += accel*dt;
+      else state.player.vx *= 0.85; // 減衰
+      // clamp
+      state.player.vx = Math.max(-maxV, Math.min(maxV, state.player.vx));
+      state.player.x += state.player.vx * dt;
+      // 壁反射
+      if(state.player.x < 0){ state.player.x = 0; state.player.vx *= -0.3; }
+      if(state.player.x + state.player.w > canvas.width){ state.player.x = canvas.width - state.player.w; state.player.vx *= -0.3; }
+    }
+
+    function collide(a,b){
+      return !(a.x+a.w < b.x || b.x+b.w < a.x || a.y+a.h < b.y || b.y+b.h < a.y);
+    }
+
+    function update(dt){
+      state.t += dt;
+      // スコア: 時間と少しのボーナス
+      state.score += dt*10; // 秒あたり10点
+      scoreEl.textContent = Math.floor(state.score);
+
+      // 難易度スケーリング
+      state.speed += dt*6; // 徐々に速く
+      const spawnRate = 0.8 - Math.min(0.6, state.t*0.015); // 出現間隔が短く
+      if(state._spawnTimer === undefined) state._spawnTimer = 0;
+      state._spawnTimer -= dt;
+      if(state._spawnTimer <= 0){
+        spawnObstacle();
+        state._spawnTimer = spawnRate;
+      }
+
+      // 入力
+      handleInput(dt);
+
+      // 障害物更新
+      for(const o of state.obstacles){ o.y += o.vy*dt; }
+      // 画面外のものを削除
+      state.obstacles = state.obstacles.filter(o => o.y < canvas.height + 40);
+
+      // 当たり判定
+      for(const o of state.obstacles){
+        if(collide({x:state.player.x,y:state.player.y,w:state.player.w,h:state.player.h}, o)){
+          gameOver();
+          break;
+        }
+      }
+    }
+
+    function draw(){
+      // 背景
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      // グリッドっぽい演出
+      ctx.save();
+      ctx.globalAlpha = 0.07;
+      ctx.strokeStyle = '#9ad0ff';
+      ctx.lineWidth = 1;
+      for(let x=0; x<canvas.width; x+=40){
+        ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke();
+      }
+      for(let y=0; y<canvas.height; y+=40){
+        ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke();
+      }
+      ctx.restore();
+
+      // プレイヤー
+      const p = state.player;
+      ctx.fillStyle = '#6cf';
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // 速度に応じた尾
+      ctx.fillStyle = 'rgba(108,204,255,0.35)';
+      ctx.fillRect(p.x, p.y-6, Math.max(6, Math.abs(p.vx*0.05)), 4);
+
+      // 障害物
+      ctx.fillStyle = '#ff6b6b';
+      for(const o of state.obstacles){
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+      }
+
+      // スタート時のオーバーレイ
+      if(!state.running){
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = '#e9ecf1';
+        ctx.font = '700 42px system-ui, -apple-system, Segoe UI, Roboto';
+        ctx.textAlign = 'center';
+        ctx.fillText('Dodger', canvas.width/2, canvas.height/2-20);
+        ctx.font = '16px system-ui, -apple-system, Segoe UI, Roboto';
+        ctx.fillStyle = '#aab1c6';
+        ctx.fillText('スペースで開始・←/→ または A/D で移動・Pで一時停止', canvas.width/2, canvas.height/2+16);
+        ctx.fillText('モバイルは画面下のボタンでもOK', canvas.width/2, canvas.height/2+40);
+      }
+
+      // ポーズ表示
+      if(state.paused){
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 28px system-ui, -apple-system';
+        ctx.textAlign = 'center';
+        ctx.fillText('PAUSED', canvas.width/2, canvas.height/2);
+      }
+    }
+
+    function loop(t){
+      if(!state.running || state.paused) return;
+      if(!state.last) state.last = t;
+      const dt = Math.min(0.033, (t - state.last)/1000);
+      state.last = t;
+      update(dt); draw();
+      requestAnimationFrame(loop);
+    }
+
+    function gameOver(){
+      state.running = false; state.paused = false;
+      toast.textContent = 'ゲームオーバー! R かボタンで再スタート';
+      draw();
+      // スコア保存
+      saveBest(Math.floor(state.score));
+    }
+
+    // --- 入力系 ---
+    window.addEventListener('keydown', (e)=>{
+      if(e.code === 'Space'){ start(); e.preventDefault(); }
+      if(e.key === 'p' || e.key === 'P'){ pauseToggle(); }
+      if(e.key === 'r' || e.key === 'R'){ reset(); start(); }
+      if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') state.inputs.left = true;
+      if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') state.inputs.right = true;
+    });
+    window.addEventListener('keyup', (e)=>{
+      if(e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') state.inputs.left = false;
+      if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') state.inputs.right = false;
+    });
+
+    // モバイルボタン
+    leftBtn.addEventListener('touchstart', ()=> state.inputs.left = true);
+    leftBtn.addEventListener('touchend', ()=> state.inputs.left = false);
+    rightBtn.addEventListener('touchstart', ()=> state.inputs.right = true);
+    rightBtn.addEventListener('touchend', ()=> state.inputs.right = false);
+
+    // リスタート
+    restartBtn.addEventListener('click', ()=>{ reset(); start(); });
+
+    // ベストスコアの保存
+    function saveBest(s){
+      try{
+        const key = 'dodger_best_v1';
+        const best = Number(localStorage.getItem(key) || 0);
+        if(s > best){ localStorage.setItem(key, String(s)); showBest(); }
+      }catch(err){ /* ignore */ }
+    }
+    function showBest(){
+      try{
+        const key = 'dodger_best_v1';
+        const best = Number(localStorage.getItem(key) || 0);
+        if(best>0){ toast.textContent = `自己ベスト: ${best}`; setTimeout(()=>toast.textContent='', 2500); }
+      }catch(err){ /* ignore */ }
+    }
+
+    reset();
+    showBest();
+  })();
+  </script>
+</body>
+</html>
