@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Dolphin Dodger — シンプル避けゲーム</title>
+  <title>Dolphin Dodger (Vector) — シンプル避けゲーム</title>
   <style>
     :root { --bg:#0f1220; --fg:#e9ecf1; --acc:#6cf; --muted:#aab1c6; }
     *{box-sizing:border-box}
@@ -46,7 +46,6 @@
     const leftBtn = document.getElementById('leftBtn');
     const rightBtn = document.getElementById('rightBtn');
 
-    // --- サイズをデバイスに合わせて調整（レターボックス） ---
     function fitCanvas(){
       const maxW = Math.min(720, window.innerWidth*0.95);
       const scale = maxW / canvas.width;
@@ -56,7 +55,6 @@
     window.addEventListener('resize', fitCanvas);
     fitCanvas();
 
-    // --- ゲームオブジェクト ---
     const state = {
       running: false,
       paused: false,
@@ -64,101 +62,129 @@
       t: 0,
       score: 0,
       speed: 130,
-      player: { x: canvas.width/2, y: canvas.height-60, w: 48, h: 24, vx: 0 },
+      player: { x: canvas.width/2, y: canvas.height-60, w: 60, h: 26, vx: 0 },
       obstacles: [],
       inputs: { left:false, right:false },
       _spawnTimer: 0
     };
 
     function reset(){
-      state.running = false;
-      state.paused = false;
-      state.t = 0; state.last = 0;
-      state.score = 0; scoreEl.textContent = '0';
+      state.running = false; state.paused = false;
+      state.t = 0; state.last = 0; state.score = 0; scoreEl.textContent = '0';
       state.speed = 130;
-      state.player = { x: canvas.width/2, y: canvas.height-60, w: 48, h: 24, vx: 0 };
-      state.obstacles = [];
-      state._spawnTimer = 0;
+      state.player = { x: canvas.width/2, y: canvas.height-60, w: 60, h: 26, vx: 0 };
+      state.obstacles = []; state._spawnTimer = 0;
       toast.textContent = 'スペースで開始 / Pで一時停止';
       draw();
     }
 
-    function start(){
-      if(state.running) return;
-      state.running = true; state.paused = false; toast.textContent = 'Good luck!';
-      requestAnimationFrame(loop);
-      setTimeout(()=> toast.textContent = 'スコアは生存時間に応じて増加', 800);
-      setTimeout(()=> toast.textContent = '難易度は徐々に上がります', 2000);
-      setTimeout(()=> toast.textContent = '', 4200);
-    }
-
-    function pauseToggle(){
-      if(!state.running) return;
-      state.paused = !state.paused;
-      toast.textContent = state.paused ? '一時停止 (Pで再開)' : '';
-      if(!state.paused) requestAnimationFrame(loop);
-    }
+    function start(){ if(state.running) return; state.running = true; state.paused = false; requestAnimationFrame(loop); }
+    function pauseToggle(){ if(!state.running) return; state.paused = !state.paused; if(!state.paused) requestAnimationFrame(loop); }
 
     function spawnObstacle(){
-      const tile = 28; // 波の1タイル幅
-      const tiles = Math.floor(1 + Math.random()*4); // 1〜4タイル
-      const w = tile * tiles;
+      const w = 40 + Math.random()*80;
       const x = Math.random()*(canvas.width - w);
       const speed = state.speed * (0.9 + Math.random()*0.2);
-      state.obstacles.push({ x, y: -32, w, h: 28, vy: speed });
+      state.obstacles.push({ x, y: -32, w, h: 24, vy: speed, phase: Math.random()*Math.PI*2 });
     }
 
     function handleInput(dt){
-      const accel = 900; // px/s^2
-      const maxV = 420; // px/s
+      const accel = 900, maxV = 420;
       if(state.inputs.left && !state.inputs.right) state.player.vx -= accel*dt;
       else if(state.inputs.right && !state.inputs.left) state.player.vx += accel*dt;
-      else state.player.vx *= 0.85; // 減衰
-      // clamp
+      else state.player.vx *= 0.85;
       state.player.vx = Math.max(-maxV, Math.min(maxV, state.player.vx));
       state.player.x += state.player.vx * dt;
-      // 壁反射
       if(state.player.x < 0){ state.player.x = 0; state.player.vx *= -0.3; }
       if(state.player.x + state.player.w > canvas.width){ state.player.x = canvas.width - state.player.w; state.player.vx *= -0.3; }
     }
 
-    function collide(a,b){
-      return !(a.x+a.w < b.x || b.x+b.w < a.x || a.y+a.h < b.y || b.y+b.h < a.y);
-    }
+    function collide(a,b){ return !(a.x+a.w < b.x || b.x+b.w < a.x || a.y+a.h < b.y || b.y+b.h < a.y); }
 
     function update(dt){
-      state.t += dt;
-      // スコア
-      state.score += dt*10;
-      scoreEl.textContent = Math.floor(state.score);
-
-      // 難易度スケーリング
+      state.t += dt; state.score += dt*10; scoreEl.textContent = Math.floor(state.score);
       state.speed += dt*6;
       const spawnRate = 0.8 - Math.min(0.6, state.t*0.015);
       state._spawnTimer -= dt;
-      if(state._spawnTimer <= 0){
-        spawnObstacle();
-        state._spawnTimer = spawnRate;
-      }
-
-      // 入力
+      if(state._spawnTimer <= 0){ spawnObstacle(); state._spawnTimer = spawnRate; }
       handleInput(dt);
-
-      // 障害物更新
-      for(const o of state.obstacles){ o.y += o.vy*dt; }
-      state.obstacles = state.obstacles.filter(o => o.y < canvas.height + 40);
-
-      // 当たり判定
       for(const o of state.obstacles){
-        if(collide({x:state.player.x,y:state.player.y,w:state.player.w,h:state.player.h}, o)){
-          gameOver(); break;
-        }
+        o.y += o.vy*dt;
+        // 横ゆらぎ
+        o.phase += dt*2;
+        o.x += Math.sin(o.phase) * 20 * dt;
       }
+      state.obstacles = state.obstacles.filter(o => o.y < canvas.height + 40);
+      for(const o of state.obstacles){ if(collide({x:state.player.x,y:state.player.y,w:state.player.w,h:state.player.h}, o)){ gameOver(); break; } }
     }
 
-    function draw(){
-      // 背景
-      ctx.clearRect(0,0,canvas.width,canvas.height);
+    // ---- Vector Drawing ----
+    function drawDolphin(x, y, vx){
+      ctx.save();
+      ctx.translate(x + 30, y + 10); // center-ish
+      ctx.rotate(Math.max(-0.35, Math.min(0.35, vx*0.002)));
+      // body
+      const grd = ctx.createLinearGradient(-30,-10, 30,10);
+      grd.addColorStop(0,'#79d3ff'); grd.addColorStop(1,'#3aa7e6');
+      ctx.fillStyle = grd;
+      roundRect(-30, -10, 60, 20, 10, true, false);
+      // tail
+      ctx.beginPath();
+      ctx.moveTo(-36,0); ctx.lineTo(-52,-8); ctx.lineTo(-48,0); ctx.lineTo(-52,8); ctx.closePath();
+      ctx.fillStyle = '#5cc2f5'; ctx.fill();
+      // dorsal fin
+      ctx.beginPath();
+      ctx.moveTo(6,-10); ctx.quadraticCurveTo(2,-22, -4,-10); ctx.closePath();
+      ctx.fillStyle = '#55b6ee'; ctx.fill();
+      // eye
+      ctx.beginPath(); ctx.arc(18,-3,2.2,0,Math.PI*2); ctx.fillStyle = '#0b2540'; ctx.fill();
+      // spark
+      ctx.globalAlpha = 0.25; ctx.fillStyle = '#9be1ff'; roundRect(8,-7,18,6,3,true,false); ctx.globalAlpha = 1;
+      ctx.restore();
+
+      // motion trail
+      ctx.fillStyle = 'rgba(108,204,255,0.25)';
+      ctx.fillRect(x-8, y+8, Math.max(6, Math.abs(vx*0.05)), 4);
+    }
+
+    function drawWave(o){
+      ctx.save();
+      ctx.translate(o.x, o.y);
+      ctx.fillStyle = '#4cc3ff';
+      ctx.strokeStyle = '#b7e6ff';
+      // base rounded rect (collision body visual)
+      roundRect(0, 4, o.w, 16, 8, true, false);
+
+      // sine crest
+      ctx.beginPath();
+      const amp = 6, k = (Math.PI*2)/o.w, off = (o.phase*12)% (Math.PI*2);
+      ctx.moveTo(0,6 + Math.sin(off)*amp);
+      for(let x=0;x<=o.w;x+=4){
+        const y = 6 + Math.sin(off + x*k)*amp;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(o.w, 4);
+      ctx.lineTo(0, 4);
+      ctx.closePath();
+      ctx.fillStyle = '#73d4ff';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function roundRect(x, y, w, h, r, fill, stroke){
+      const rr = Math.min(r, w/2, h/2);
+      ctx.beginPath();
+      ctx.moveTo(x+rr,y);
+      ctx.arcTo(x+w,y, x+w,y+h, rr);
+      ctx.arcTo(x+w,y+h, x,y+h, rr);
+      ctx.arcTo(x,y+h, x,y, rr);
+      ctx.arcTo(x,y, x+w,y, rr);
+      if(fill) ctx.fill();
+      if(stroke) ctx.stroke();
+    }
+
+    function drawBackground(){
+      // grid
       ctx.save();
       ctx.globalAlpha = 0.07;
       ctx.strokeStyle = '#9ad0ff';
@@ -170,36 +196,17 @@
         ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke();
       }
       ctx.restore();
+    }
 
-      // プレイヤー（🐬）
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      drawBackground();
+      // player
       const p = state.player;
-      const dolphinSize = 36;
-      ctx.font = `${dolphinSize}px system-ui, Apple Color Emoji, Segoe UI Emoji`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.save();
-      ctx.translate(p.x, p.y-8);
-      ctx.rotate(Math.max(-0.35, Math.min(0.35, p.vx*0.002)));
-      ctx.fillText('🐬', 0, 0);
-      ctx.restore();
+      drawDolphin(p.x, p.y, p.vx);
+      // obstacles
+      for(const o of state.obstacles){ drawWave(o); }
 
-      // 速度に応じた尾（残像）
-      ctx.fillStyle = 'rgba(108,204,255,0.30)';
-      ctx.fillRect(p.x-6, p.y+2, Math.max(6, Math.abs(p.vx*0.05)), 4);
-
-      // 障害物（🌊 波）
-      ctx.font = `28px system-ui, Apple Color Emoji, Segoe UI Emoji`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      for(const o of state.obstacles){
-        const tile = 28;
-        const n = Math.max(1, Math.round(o.w / tile));
-        for(let i=0;i<n;i++){
-          ctx.fillText('🌊', o.x + i*tile, o.y);
-        }
-      }
-
-      // スタート時のオーバーレイ
       if(!state.running){
         ctx.fillStyle = 'rgba(0,0,0,0.45)';
         ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -209,7 +216,7 @@
         ctx.fillText('Dolphin Dodger', canvas.width/2, canvas.height/2-20);
         ctx.font = '16px system-ui, -apple-system, Segoe UI, Roboto';
         ctx.fillStyle = '#aab1c6';
-        ctx.fillText('🐬 を操作して 🌊 を避けよう', canvas.width/2, canvas.height/2+16);
+        ctx.fillText('イルカを操作して波を避けよう', canvas.width/2, canvas.height/2+16);
         ctx.fillText('スペースで開始・←/→ または A/D ・Pで一時停止（モバイルは下のボタン）', canvas.width/2, canvas.height/2+40);
       }
 
@@ -232,16 +239,9 @@
       requestAnimationFrame(loop);
     }
 
-    function gameOver(){
-      state.running = false; state.paused = false;
-      toast.textContent = 'ゲームオーバー! R かボタンで再スタート';
-      draw();
-      saveBest(Math.floor(state.score));
-    }
-
+    function gameOver(){ state.running = false; state.paused = false; toast.textContent = 'ゲームオーバー! R かボタンで再スタート'; draw(); saveBest(Math.floor(state.score)); }
     function startIfNotRunning(){ if(!state.running){ start(); } }
 
-    // --- 入力系 ---
     window.addEventListener('keydown', (e)=>{
       if(e.code === 'Space'){ start(); e.preventDefault(); }
       if(e.key === 'p' || e.key === 'P'){ pauseToggle(); }
@@ -254,39 +254,17 @@
       if(e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') state.inputs.right = false;
     });
 
-    // モバイルボタン
     leftBtn.addEventListener('touchstart', ()=> { state.inputs.left = true; startIfNotRunning(); });
     leftBtn.addEventListener('touchend', ()=> state.inputs.left = false);
     rightBtn.addEventListener('touchstart', ()=> { state.inputs.right = true; startIfNotRunning(); });
     rightBtn.addEventListener('touchend', ()=> state.inputs.right = false);
 
-    // リスタート
     restartBtn.addEventListener('click', ()=>{ reset(); start(); });
 
-    // ベストスコアの保存
-    function saveBest(s){
-      try{
-        const key = 'dodger_best_v1';
-        const best = Number(localStorage.getItem(key) || 0);
-        if(s > best){ localStorage.setItem(key, String(s)); showBest(); }
-      }catch(err){ /* ignore */ }
-    }
-    function showBest(){
-      try{
-        const key = 'dodger_best_v1';
-        const best = Number(localStorage.getItem(key) || 0);
-        if(best>0){ toast.textContent = `自己ベスト: ${best}`; setTimeout(()=>toast.textContent='', 2500); }
-      }catch(err){ /* ignore */ }
-    }
+    function saveBest(s){ try{ const key='dodger_best_v1'; const best=Number(localStorage.getItem(key)||0); if(s>best){ localStorage.setItem(key,String(s)); showBest(); } }catch(e){} }
+    function showBest(){ try{ const key='dodger_best_v1'; const best=Number(localStorage.getItem(key)||0); if(best>0){ toast.textContent = `自己ベスト: ${best}`; setTimeout(()=>toast.textContent='', 2500);} }catch(e){} }
 
-    function updateAndDrawOnce(){ update(0); draw(); }
-
-    // 初期化
-    function init(){
-      reset();
-      showBest();
-      draw();
-    }
+    function init(){ reset(); showBest(); draw(); }
     init();
   })();
   </script>
